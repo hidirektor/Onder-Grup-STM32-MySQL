@@ -1,0 +1,9 @@
+main.c:77:6:ESP8266_Init	1
+main.c:103:7:ESP8266_SendData	1
+main.c:115:7:CheckDatabase	1
+main.c:125:6:main	3
+main.c:163:6:SystemClock_Config	3
+main.c:202:13:MX_USART1_UART_Init	2
+main.c:235:13:MX_USART2_UART_Init	2
+main.c:268:13:MX_GPIO_Init	1
+main.c:301:6:Error_Handler	1
