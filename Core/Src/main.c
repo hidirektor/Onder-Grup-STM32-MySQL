@@ -18,12 +18,11 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "stdio.h"
+#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <string.h>
-#include <stdlib.h>
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -42,119 +41,197 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+I2C_HandleTypeDef hi2c1;
 UART_HandleTypeDef huart1;
-UART_HandleTypeDef huart2;
 
+osThreadId defaultTaskHandle;
 /* USER CODE BEGIN PV */
-char esp_data[100]; // ESP8266 ile iletişim için veri tamponu
+/* WiFi Configuration */
+char* ssid = "iPhone SE (2nd generation)";
+char* password = "asdasd00991";
 
-// Veritabanı bilgileri
-char* db_ip = "89.252.138.99";
-uint16_t db_port = 3306;
-char* db_name = "hidirekt_ondergrup";
-char* db_user = "hidirekt_onder";
-char* db_password = "!2(l;cR4TBQG";
+/* Server Configuration */
+char* server1 = "yst.com.tr";
+char* server2 = "yst.com.tr";
+char* api1 = "/api/api.php";
+char* api2 = "/api/api2.php";
 
-// LED pinleri
-GPIO_TypeDef* led_gpio_port = GPIOB;
-uint16_t green_led_pin = GPIO_PIN_6;
-uint16_t red_led_pin = GPIO_PIN_5;
+char* response[100];
+
+/* LED Control Variables */
+uint8_t greenLedStatus = 0;
+uint8_t redLedStatus = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
-static void MX_USART2_UART_Init(void);
+static void MX_I2C1_Init(void);
+void StartDefaultTask(void const * argument);
+
 /* USER CODE BEGIN PFP */
-void ESP8266_Init(void);
-void ESP8266_SendData(char* data);
-void CheckDatabase(void);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void ESP8266_Init(void)
+void WiFi_Init(void);
+void WiFi_Connect(void);
+void Send_GET_Request(char* server, char* api, uint8_t led);
+
+void LED_Task1(void *pvParameters);
+void LED_Task2(void *pvParameters);
+void WifiTask(void *pvParameters);
+
+#define WIFI_TASK_PRIORITY 1
+#define WIFI_TASK_STACK_SIZE 512
+/* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
+int main(void)
 {
-  HAL_UART_Transmit(&huart1, (uint8_t*)"AT+RST\r\n", 8, HAL_MAX_DELAY); // ESP8266'nın sıfırlanması
-  HAL_Delay(2000); // 2 saniye bekleme
+  /* USER CODE BEGIN 1 */
 
-  HAL_UART_Transmit(&huart1, (uint8_t*)"AT+CWMODE=1\r\n", 13, HAL_MAX_DELAY); // WiFi modunun istemci moduna ayarlanması
-  HAL_Delay(1000); // 1 saniye bekleme
+  /* USER CODE END 1 */
 
-  char connect_cmd[100];
-  sprintf(connect_cmd, "AT+CWJAP=\"%s\",\"%s\"\r\n", "Wifi Name", "Password"); // WiFi ağına bağlantı
-  HAL_UART_Transmit(&huart1, (uint8_t*)connect_cmd, strlen(connect_cmd), HAL_MAX_DELAY);
-   HAL_Delay(7000); // 7 saniye bekleme
+  /* MCU Configuration--------------------------------------------------------*/
 
-   HAL_UART_Transmit(&huart1, (uint8_t*)"AT+CIPMUX=0\r\n", 13, HAL_MAX_DELAY); // Bağlantı noktası çoklu modunun devre dışı bırakılması
-   HAL_Delay(1000); // 1 saniye bekleme
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
 
-   HAL_UART_Transmit(&huart1, (uint8_t*)"AT+CIPSTART=\"TCP\",\"", 20, HAL_MAX_DELAY);
-   HAL_UART_Transmit(&huart1, (uint8_t*)db_ip, strlen(db_ip), HAL_MAX_DELAY); // Veritabanına TCP bağlantısı
-   HAL_UART_Transmit(&huart1, (uint8_t*)"\",", 2, HAL_MAX_DELAY);
-   char db_port_str[6];
-   sprintf(db_port_str, "%d", db_port);
-   HAL_UART_Transmit(&huart1, (uint8_t*)db_port_str, strlen(db_port_str), HAL_MAX_DELAY); // Bağlantı noktası
-   HAL_UART_Transmit(&huart1, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
-   HAL_Delay(3000); // 3 saniye bekleme
- }
+  /* USER CODE BEGIN Init */
 
- void ESP8266_SendData(char* data)
- {
-   HAL_UART_Transmit(&huart1, (uint8_t*)"AT+CIPSEND=", 11, HAL_MAX_DELAY);
-   char data_length_str[6];
-   sprintf(data_length_str, "%d", strlen(data));
-   HAL_UART_Transmit(&huart1, (uint8_t*)data_length_str, strlen(data_length_str), HAL_MAX_DELAY); // Veri uzunluğu
-   HAL_UART_Transmit(&huart1, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
-   HAL_Delay(2000); // 2 saniye bekleme
-   HAL_UART_Transmit(&huart1, (uint8_t*)data, strlen(data), HAL_MAX_DELAY); // Veri gönderme
-   HAL_Delay(3000); // 3 saniye bekleme
- }
+  /* USER CODE END Init */
 
- void CheckDatabase(void)
- {
-   HAL_UART_Transmit(&huart1, (uint8_t*)"AT+CIPSEND=4\r\n", 14, HAL_MAX_DELAY);
-   HAL_Delay(2000); // 2 saniye bekleme
-   HAL_UART_Transmit(&huart1, (uint8_t*)"PING\r\n", 6, HAL_MAX_DELAY); // Veritabanı bağlantısını kontrol etmek için PING gönderme
-   HAL_Delay(3000); // 3 saniye bekleme
+  /* Configure the system clock */
+  SystemClock_Config();
 
-   HAL_UART_Receive_IT(&huart1, (uint8_t*)esp_data, 100); // ESP8266'dan gelen yanıtı almak için UART kesmesini başlatma
- }
+  /* USER CODE BEGIN SysInit */
 
- int main(void)
- {
-   HAL_Init();
+  /* USER CODE END SysInit */
 
-   SystemClock_Config();
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_USART1_UART_Init();
+  MX_I2C1_Init();
+  /* USER CODE BEGIN 2 */
 
-   MX_GPIO_Init();
-   MX_USART1_UART_Init();
-   MX_USART2_UART_Init();
+  /* USER CODE END 2 */
 
-   ESP8266_Init(); // ESP8266'nın başlatılması
+  /* USER CODE BEGIN RTOS_MUTEX */
+  /* add mutexes, ... */
+  /* USER CODE END RTOS_MUTEX */
 
-   while (1)
-   {
-     CheckDatabase(); // Veritabanını kontrol etme
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* add semaphores, ... */
+  /* USER CODE END RTOS_SEMAPHORES */
 
-     // LED'leri kontrol etme
-     if (strstr(esp_data, "LED_ON")) // ESP8266'dan gelen yanıtta "LED_ON" ifadesini arama
-     {
-       HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET); // LED'i açma
-       ESP8266_SendData("LED is ON\r\n"); // Yanıt olarak "LED is ON" gönderme
-     }
-     else if (strstr(esp_data, "LED_OFF")) // ESP8266'dan gelen yanıtta "LED_OFF" ifadesini arama
-     {
-       HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET); // LED'i kapatma
-       ESP8266_SendData("LED is OFF\r\n"); // Yanıt olarak "LED is OFF" gönderme
-     }
+  /* USER CODE BEGIN RTOS_TIMERS */
+  /* start timers, add new ones, ... */
+  /* USER CODE END RTOS_TIMERS */
 
-     memset(esp_data, 0, sizeof(esp_data)); // esp_data dizisini sıfırlama
+  /* USER CODE BEGIN RTOS_QUEUES */
+  /* add queues, ... */
+  /* USER CODE END RTOS_QUEUES */
 
-     HAL_Delay(100); // 100 ms bekleme
-   }
- }
+  /* Create the thread(s) */
+  /* definition and creation of defaultTask */
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
+  defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
+
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
+  xTaskCreate(LED_Task1, "LED_Task1", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+  //xTaskCreate(LED_Task2, "LED_Task2", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+  xTaskCreate(WifiTask, "WifiTask", WIFI_TASK_STACK_SIZE, NULL, WIFI_TASK_PRIORITY, NULL);
+  /* Start scheduler */
+  osKernelStart();
+  /* We should never get here as control is now taken by the scheduler */
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  while (1)
+      {
+        //main loop
+      }
+  /* USER CODE END 3 */
+}
+
+void WifiTask(void *pvParameters)
+{
+  HAL_UART_Transmit(&huart1, (uint8_t *)"AT+CWJAP=\"ONDERLIFT_PERSONEL\",\"PersonelOt2022*-\"\r\n", strlen("AT+CWJAP=\"ONDERLIFT_PERSONEL\",\"PersonelOt2022*-\"\r\n"), HAL_MAX_DELAY);
+  HAL_Delay(500);
+
+  HAL_UART_Transmit(&huart1, (uint8_t *)"AT+CIPSTART=0,\"TCP\",\"yst.com.tr\",80\r\n", strlen("AT+CIPSTART=0,\"TCP\",\"yst.com.tr\",80\r\n"), HAL_MAX_DELAY);
+  HAL_Delay(500);
+
+  HAL_UART_Transmit(&huart1, (uint8_t *)"AT+CIPSEND=0,43\r\n", strlen("AT+CIPSEND=0,43\r\n"), HAL_MAX_DELAY);
+  HAL_Delay(500);
+
+  HAL_UART_Transmit(&huart1, (uint8_t *)"GET /api/api.php HTTP/1.1\r\nHost: yst.com.tr\r\n\r\n", strlen("GET /api/api.php HTTP/1.1\r\nHost: yst.com.tr\r\n\r\n"), HAL_MAX_DELAY);
+  HAL_Delay(500);
+
+  char responseBuffer[256];
+  memset(responseBuffer, 0, sizeof(responseBuffer));
+  //HAL_UART_Receive(&huart1, (uint8_t *)responseBuffer, sizeof(responseBuffer) - 1, HAL_MAX_DELAY);
+  uint16_t responseLength = 0;
+  while (responseLength < sizeof(responseBuffer) - 1)
+  {
+    uint16_t bytesRead = HAL_UART_Receive(&huart1, (uint8_t *)(responseBuffer + responseLength), sizeof(responseBuffer) - responseLength - 1, HAL_MAX_DELAY);
+    responseLength += bytesRead;
+
+    if (strstr(responseBuffer, "\r\n\r\n") != NULL)
+    {
+      break;
+    }
+  }
+
+  if (strstr(responseBuffer, "\"greenLed\":\"1\"") != NULL)
+  {
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
+  }
+  else
+  {
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET);
+  }
+
+  while (1)
+  {
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+}
+
+void LED_Task1(void *pvParameters)
+{
+  while (1)
+  {
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);
+
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);
+
+    vTaskDelay(pdMS_TO_TICKS(500));
+  }
+}
+
+void LED_Task2(void *pvParameters)
+{
+  while (1)
+  {
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET);
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+}
 
 /**
   * @brief System Clock Configuration
@@ -195,6 +272,40 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 100000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -209,7 +320,7 @@ static void MX_USART1_UART_Init(void)
   /* USER CODE BEGIN USART1_Init 1 */
 
   /* USER CODE END USART1_Init 1 */
-  huart1.Instance = USART1;
+  /*huart1.Instance = USART1;
   huart1.Init.BaudRate = 115200;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
@@ -220,43 +331,10 @@ static void MX_USART1_UART_Init(void)
   if (HAL_UART_Init(&huart1) != HAL_OK)
   {
     Error_Handler();
-  }
+  }*/
   /* USER CODE BEGIN USART1_Init 2 */
 
   /* USER CODE END USART1_Init 2 */
-
-}
-
-/**
-  * @brief USART2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART2_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART2_Init 0 */
-
-  /* USER CODE END USART2_Init 0 */
-
-  /* USER CODE BEGIN USART2_Init 1 */
-
-  /* USER CODE END USART2_Init 1 */
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART2_Init 2 */
-
-  /* USER CODE END USART2_Init 2 */
 
 }
 
@@ -293,6 +371,24 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
+
+/* USER CODE BEGIN Header_StartDefaultTask */
+/**
+  * @brief  Function implementing the defaultTask thread.
+  * @param  argument: Not used
+  * @retval None
+  */
+/* USER CODE END Header_StartDefaultTask */
+void StartDefaultTask(void const * argument)
+{
+  /* USER CODE BEGIN 5 */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END 5 */
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.
